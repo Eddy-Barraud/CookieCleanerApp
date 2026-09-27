@@ -102,6 +102,17 @@ public final class SafariClosureWatcher {
             return
         }
         
+        let now = Date().timeIntervalSince1970
+        let lastCleanKey = "CookieCleaner.lastAutoCleanTimestamp"
+        let lastClean = UserDefaults.standard.double(forKey: lastCleanKey)
+        if now - lastClean < 4.0 {
+            #if DEBUG
+            AppLogger.shared.debug("Auto-clean already performed by helper/watcher within last 4s. Skipping duplicate.")
+            #endif
+            return
+        }
+        UserDefaults.standard.set(now, forKey: lastCleanKey)
+        
         #if DEBUG
         AppLogger.shared.debug("⏳ Waiting 1.0 second to allow Safari's SQLite/binary write buffers to flush to disk...")
         #endif
@@ -110,7 +121,7 @@ public final class SafariClosureWatcher {
             // Wait 1.0 second for Safari to finish closing file descriptors
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             
-            AppLogger.shared.info("⚡️ Background Task Triggered: Cleaning Safari cookies & cache...")
+            AppLogger.shared.info("⚡ Background Task Triggered: Cleaning Safari cookies & cache...")
             let result = await CookieStore.shared.cleanCookies(whitelist: WhitelistManager.shared)
             
             if result.isSuccess {

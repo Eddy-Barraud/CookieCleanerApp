@@ -1,7 +1,9 @@
 import Foundation
 
-public struct CookieItem: Identifiable, Sendable {
-    public let id = UUID()
+public struct CookieItem: Identifiable, Hashable, Sendable {
+    public let id: UUID
+    public let profileId: String
+    public let profileName: String
     public let url: String
     public let name: String
     public let path: String
@@ -11,7 +13,6 @@ public struct CookieItem: Identifiable, Sendable {
     public let isWhitelisted: Bool
     public let isSecure: Bool
     public let isHTTPOnly: Bool
-    public let profileName: String
     
     public var cleanDomain: String {
         var d = url
@@ -22,6 +23,9 @@ public struct CookieItem: Identifiable, Sendable {
     }
     
     public init(
+        id: UUID = UUID(),
+        profileId: String = "default",
+        profileName: String = "Default",
         url: String,
         name: String,
         path: String,
@@ -30,9 +34,11 @@ public struct CookieItem: Identifiable, Sendable {
         expiration: Date?,
         isWhitelisted: Bool,
         isSecure: Bool,
-        isHTTPOnly: Bool,
-        profileName: String = "Default"
+        isHTTPOnly: Bool
     ) {
+        self.id = id
+        self.profileId = profileId
+        self.profileName = profileName
         self.url = url
         self.name = name
         self.path = path
@@ -42,6 +48,5 @@ public struct CookieItem: Identifiable, Sendable {
         self.isWhitelisted = isWhitelisted
         self.isSecure = isSecure
         self.isHTTPOnly = isHTTPOnly
-        self.profileName = profileName
     }
 }

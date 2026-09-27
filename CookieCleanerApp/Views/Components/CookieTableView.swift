@@ -1,12 +1,20 @@
 import SwiftUI
 
 public struct CookieTableView: View {
+    @Environment(CookieStore.self) private var cookieStore
+    @Environment(WhitelistManager.self) private var whitelistManager
+    
     let cookies: [CookieItem]
     let profiles: [SafariProfile]
     
     @State private var searchText: String = ""
     @State private var selectedStatus: StatusFilter = .all
     @State private var selectedProfile: String = "All"
+    @State private var selectedCookieIds: Set<UUID> = []
+    
+    @State private var showingDeleteConfirmation: Bool = false
+    @State private var itemsToDelete: [CookieItem] = []
+    @State private var isDeleting: Bool = false
     
     public enum StatusFilter: String, CaseIterable, Identifiable {
         case all = "All"
@@ -41,8 +49,9 @@ public struct CookieTableView: View {
     
     public var body: some View {
         VStack(spacing: 12) {
-            // Filters row
+            // Filters & Actions row
             HStack(spacing: 12) {
+                // Search box
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
@@ -68,6 +77,7 @@ public struct CookieTableView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 )
+                .frame(minWidth: 160)
                 
                 Picker("Status", selection: $selectedStatus) {
                     ForEach(StatusFilter.allCases) { filter in
@@ -86,13 +96,47 @@ public struct CookieTableView: View {
                 
                 Spacer()
                 
-                Text("\(filteredCookies.count) of \(cookies.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Selection action controls
+                if !selectedCookieIds.isEmpty {
+                    HStack(spacing: 8) {
+                        Text("\(selectedCookieIds.count) selected")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                        
+                        Button(role: .destructive) {
+                            prepareDeleteSelected()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash.fill")
+                                Text("Delete (\(selectedCookieIds.count))")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.small)
+                        
+                        Button("Deselect") {
+                            selectedCookieIds.removeAll()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.red.opacity(0.08))
+                    )
+                } else {
+                    Text("\(filteredCookies.count) of \(cookies.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             
-            // Table
-            Table(filteredCookies) {
+            // Interactive Table with multi-selection
+            Table(filteredCookies, selection: $selectedCookieIds) {
                 TableColumn("Status") { cookie in
                     HStack(spacing: 6) {
                         Image(systemName: cookie.isWhitelisted ? "shield.checkmark.fill" : "trash.fill")
@@ -146,13 +190,119 @@ public struct CookieTableView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .width(min: 120, ideal: 140)
+                .width(min: 110, ideal: 130)
+                
+                TableColumn("Action") { cookie in
+                    Button {
+                        promptDelete(items: [cookie])
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete this cookie now")
+                }
+                .width(min: 50, ideal: 50, max: 60)
             }
             .tableStyle(.inset)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(NSColor.controlBackgroundColor))
             )
+            .contextMenu(forSelectionType: CookieItem.ID.self) { items in
+                let selectedItems = filteredCookies.filter { items.contains($0.id) }
+                
+                Button(role: .destructive) {
+                    promptDelete(items: selectedItems)
+                } label: {
+                    Label(
+                        selectedItems.count > 1 ? "Delete \(selectedItems.count) Cookies" : "Delete Cookie",
+                        systemImage: "trash"
+                    )
+                }
+                
+                if let single = selectedItems.first, selectedItems.count == 1 {
+                    Divider()
+                    
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(single.cleanDomain, forType: .string)
+                    } label: {
+                        Label("Copy Domain '\(single.cleanDomain)'", systemImage: "doc.on.doc")
+                    }
+                    
+                    if !single.isWhitelisted {
+                        Button {
+                            whitelistDomain(single.cleanDomain)
+                        } label: {
+                            Label("Add '\(single.cleanDomain)' to Whitelist", systemImage: "shield.badge.plus")
+                        }
+                    }
+                }
+            } primaryAction: { items in
+                let selectedItems = filteredCookies.filter { items.contains($0.id) }
+                promptDelete(items: selectedItems)
+            }
+            .onDeleteCommand {
+                prepareDeleteSelected()
+            }
         }
+        .confirmationDialog(
+            "Delete \(itemsToDelete.count) Cookie(s)?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Cookie(s)", role: .destructive) {
+                executeDeletion()
+            }
+            Button("Cancel", role: .cancel) {
+                itemsToDelete.removeAll()
+            }
+        } message: {
+            if itemsToDelete.count == 1, let item = itemsToDelete.first {
+                Text("Are you sure you want to permanently remove cookie '\(item.name)' for '\(item.cleanDomain)' from \(item.profileName)?")
+            } else {
+                Text("Are you sure you want to permanently remove \(itemsToDelete.count) selected cookies?")
+            }
+        }
+    }
+    
+    private func prepareDeleteSelected() {
+        let targets = filteredCookies.filter { selectedCookieIds.contains($0.id) }
+        guard !targets.isEmpty else { return }
+        promptDelete(items: targets)
+    }
+    
+    private func promptDelete(items: [CookieItem]) {
+        self.itemsToDelete = items
+        self.showingDeleteConfirmation = true
+    }
+    
+    private func executeDeletion() {
+        let targets = itemsToDelete
+        guard !targets.isEmpty else { return }
+        
+        let targetIds = Set(targets.map(\.id))
+        isDeleting = true
+        
+        Task {
+            _ = await cookieStore.deleteCookies(items: targets)
+            await MainActor.run {
+                selectedCookieIds.subtract(targetIds)
+                itemsToDelete.removeAll()
+                isDeleting = false
+            }
+        }
+    }
+    
+    private func whitelistDomain(_ domain: String) {
+        let newRule = "(^|\\.)\(NSRegularExpression.escapedPattern(for: domain))$"
+        var current = whitelistManager.rawContent
+        if !current.hasSuffix("\n") && !current.isEmpty {
+            current += "\n"
+        }
+        current += "\(newRule)\n"
+        whitelistManager.updateWhitelist(content: current)
+        _ = try? cookieStore.loadCookies(whitelist: whitelistManager)
     }
 }

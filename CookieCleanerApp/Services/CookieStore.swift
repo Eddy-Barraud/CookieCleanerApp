@@ -185,6 +185,8 @@ public final class CookieStore {
                     let isWhitelisted = whitelist.isWhitelisted(test: domain)
                     
                     allItems.append(CookieItem(
+                        profileId: profile.id,
+                        profileName: profile.name,
                         url: domain,
                         name: name,
                         path: path,
@@ -193,8 +195,7 @@ public final class CookieStore {
                         expiration: cookie.expiration,
                         isWhitelisted: isWhitelisted,
                         isSecure: cookie.flags.contains(.isSecure),
-                        isHTTPOnly: cookie.flags.contains(.isHTTPOnly),
-                        profileName: profile.name
+                        isHTTPOnly: cookie.flags.contains(.isHTTPOnly)
                     ))
                 }
             }
@@ -387,6 +388,90 @@ public final class CookieStore {
         _ = try? loadCookies(whitelist: whitelist)
         
         return result
+    }
+    
+    @discardableResult
+    public func deleteCookies(byIDs ids: Set<UUID>) async -> Int {
+        let targets = loadedCookies.filter { ids.contains($0.id) }
+        return await deleteCookies(items: targets)
+    }
+    
+    @discardableResult
+    public func deleteCookies(items: [CookieItem]) async -> Int {
+        guard !items.isEmpty else { return 0 }
+        guard !isCleaning else { return 0 }
+        
+        isCleaning = true
+        defer { isCleaning = false }
+        
+        var totalDeleted = 0
+        var totalBytesFreed: Int64 = 0
+        let profiles = Self.discoverProfiles()
+        self.discoveredProfiles = profiles
+        
+        let itemsByProfile = Dictionary(grouping: items, by: { $0.profileId })
+        
+        struct TargetKey: Hashable {
+            let domain: String
+            let name: String
+            let path: String
+        }
+        
+        for (profileId, targetItems) in itemsByProfile {
+            guard let profile = profiles.first(where: { $0.id == profileId }) else { continue }
+            
+            do {
+                let cookiesData = try Data(contentsOf: profile.cookieURL)
+                let binaryCookies = try BinaryDataDecoder().decode(BinaryCookies.self, from: cookiesData)
+                
+                let targetKeys = Set(targetItems.map { TargetKey(domain: $0.url, name: $0.name, path: $0.path) })
+                
+                var deletedInProfile = 0
+                for page in binaryCookies.pages {
+                    let originalCount = page.cookies.count
+                    page.cookies.removeAll { cookie in
+                        let domain = (cookie.url ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+                        let name = (cookie.name ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+                        let path = (cookie.path ?? "/").trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+                        return targetKeys.contains(TargetKey(domain: domain, name: name, path: path))
+                    }
+                    deletedInProfile += (originalCount - page.cookies.count)
+                }
+                
+                if deletedInProfile > 0 {
+                    let encoder = BinaryDataEncoder()
+                    let encodedData = try encoder.encode(binaryCookies)
+                    let beforeSize = Int64(cookiesData.count)
+                    let afterSize = Int64(encodedData.count)
+                    if beforeSize > afterSize {
+                        totalBytesFreed += (beforeSize - afterSize)
+                    }
+                    try encodedData.write(to: profile.cookieURL, options: .atomic)
+                    AppLogger.shared.success("Deleted \(deletedInProfile) cookie(s) from '\(profile.name)'")
+                    totalDeleted += deletedInProfile
+                }
+            } catch {
+                AppLogger.shared.error("Failed to delete cookies from '\(profile.name)': \(error.localizedDescription)")
+            }
+        }
+        
+        if totalDeleted > 0 {
+            let result = CleaningResult(
+                cookiesBefore: loadedCookies.count,
+                cookiesKept: loadedCookies.count - totalDeleted,
+                cookiesDeleted: totalDeleted,
+                bytesFreed: totalBytesFreed,
+                cacheFilesRemoved: 0,
+                scanFilesRemoved: 0,
+                duration: 0.05,
+                isSuccess: true,
+                errorMessage: nil
+            )
+            CumulativeStatsManager.shared.recordCleaning(result: result)
+            _ = try? loadCookies(whitelist: WhitelistManager.shared)
+        }
+        
+        return totalDeleted
     }
     
     public func flushAllCookies() async -> CleaningResult {

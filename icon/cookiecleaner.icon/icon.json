@@ -1,19 +1,18 @@
 {
-  "fill" : {
-    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
-  },
+  "fill" : "automatic",
   "groups" : [
     {
       "layers" : [
         {
           "glass" : false,
-          "image-name" : "Image 3.svg",
-          "name" : "Image 3",
+          "hidden" : false,
+          "image-name" : "Image.svg",
+          "name" : "Image",
           "position" : {
-            "scale" : 4,
+            "scale" : 5,
             "translation-in-points" : [
-              106.1171875,
-              151.7265625
+              93.8515625,
+              105.765625
             ]
           }
         },
@@ -22,10 +21,10 @@
           "image-name" : "cookie dusts_nobg.png",
           "name" : "cookie dusts_nobg",
           "position" : {
-            "scale" : 1,
+            "scale" : 1.5,
             "translation-in-points" : [
-              -95,
-              -141.5078125
+              -106.5625,
+              -166.1171875
             ]
           }
         }

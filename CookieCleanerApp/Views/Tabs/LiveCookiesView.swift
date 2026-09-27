@@ -7,9 +7,9 @@ public struct LiveCookiesView: View {
     public init() {}
     
     public var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             // Top row: Quick summary cards + Top Domains chart
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: 20) {
                 // Left: Count cards
                 VStack(spacing: 12) {
                     let total = cookieStore.loadedCookies.count
@@ -45,7 +45,6 @@ public struct LiveCookiesView: View {
                 // Right: Top Domains Gauge
                 TopDomainsView(cookies: cookieStore.loadedCookies)
             }
-            .frame(maxHeight: 220)
             
             // Interactive Table
             CookieTableView(

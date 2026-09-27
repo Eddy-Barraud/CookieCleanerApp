@@ -122,3 +122,10 @@ CookieCleanerApp/
 
 ### Build in Xcode
 Open [CookieCleanerApp.xcodeproj](file:///Users/eddybarraud/gitclones/cookie-cleaner/CookieCleanerApp/CookieCleanerApp.xcodeproj), select the `CookieCleanerApp` scheme with the `My Mac` destination, and press **Cmd + B** (or **Cmd + R** to run).
+
+
+---
+
+## 👏 Credits & Acknowledgements
+
+- Special thanks and credits to **[Jannis Baum](https://github.com/jannis-baum)** for the original [cookie-cleaner](https://github.com/jannis-baum/cookie-cleaner/blob/main/Package.swift) implementation and binary cookie parsing foundation.

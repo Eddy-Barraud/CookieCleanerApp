@@ -1,5 +1,7 @@
 # CookieCleaner for Safari
 
+[![Build, Sign & Release DMG](https://github.com/Eddy-Barraud/CookieCleanerApp/actions/workflows/release.yml/badge.svg)](https://github.com/Eddy-Barraud/CookieCleanerApp/actions/workflows/release.yml)
+
 **CookieCleaner** is a native, modern macOS utility written in Swift and SwiftUI designed to inspect, manage, and automatically clean Safari cookies, local storage, databases, and website caches while preserving logins for your trusted websites through a customizable whitelist.
 
 ---

@@ -84,7 +84,7 @@ public class Page: BinaryCodable {
 
         var cookies: [Cookie] = []
         for _ in 0..<cookieCount {
-            let cookieSize = try container.peek(length: 4).withUnsafeBytes { $0.pointee as Int32 }
+            let cookieSize = try container.peek(length: 4).withUnsafeBytes { ptr in ptr.loadUnaligned(as: Int32.self) }
             var cookieContainer = container.nestedContainer(maxLength: Int(cookieSize))
             let cookie = try cookieContainer.decode(Cookie.self)
             cookies.append(cookie)

@@ -21,7 +21,7 @@ public final class CookieCleanerHelperDaemon {
     public func start() {
         updateHeartbeat()
         heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.updateHeartbeat()
             }
         }

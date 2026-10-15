@@ -7,7 +7,7 @@ import Observation
 public final class SafariClosureWatcher {
     public static let shared = SafariClosureWatcher()
     
-    public static let safariBundleId = "com.apple.Safari"
+    nonisolated public static let safariBundleId = "com.apple.Safari"
     
     public private(set) var isWatching: Bool = false
     public private(set) var isSafariRunning: Bool = false
@@ -46,13 +46,13 @@ public final class SafariClosureWatcher {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self,
-                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.bundleIdentifier == Self.safariBundleId else {
                 return
             }
-            
-            self.handleSafariTerminated(app: app)
+            Task { @MainActor [weak self] in
+                self?.handleSafariTerminated(app: app)
+            }
         }
         
         launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -60,13 +60,13 @@ public final class SafariClosureWatcher {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self,
-                  let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.bundleIdentifier == Self.safariBundleId else {
                 return
             }
-            
-            self.handleSafariLaunched(app: app)
+            Task { @MainActor [weak self] in
+                self?.handleSafariLaunched(app: app)
+            }
         }
         
         isWatching = true

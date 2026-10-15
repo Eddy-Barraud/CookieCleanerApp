@@ -30,7 +30,6 @@ extension BinaryFloatingPoint {
    */
   public var bytes: [UInt8] {
     var value = self
-    let data = Data(buffer: UnsafeBufferPointer(start: &value, count: 1))
-    return [UInt8](data)
+    return withUnsafeBytes(of: &value) { Array($0) }
   }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppIntents
 
 struct MyApp: App {
     @State private var watcher = SafariClosureWatcher.shared

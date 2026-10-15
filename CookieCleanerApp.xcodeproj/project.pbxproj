@@ -122,6 +122,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		361DB1253069300C006A354D /* Embed LaunchAgent and Helper */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			name = "Embed LaunchAgent and Helper";
 			shellPath = /bin/sh;
 			shellScript = (

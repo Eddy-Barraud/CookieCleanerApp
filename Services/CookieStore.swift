@@ -326,7 +326,8 @@ public final class CookieStore {
         }
     }
     
-    public func loadCookies(whitelist: WhitelistManager = .shared) throws -> [CookieItem] {
+    public func loadCookies(whitelist: WhitelistManager? = nil) throws -> [CookieItem] {
+        let whitelist = whitelist ?? WhitelistManager.shared
         var allItems: [CookieItem] = []
         let profiles = Self.discoverProfiles()
         self.discoveredProfiles = profiles
@@ -368,7 +369,8 @@ public final class CookieStore {
         return allItems
     }
     
-    public func cleanCookies(whitelist: WhitelistManager = .shared) async -> CleaningResult {
+    public func cleanCookies(whitelist: WhitelistManager? = nil) async -> CleaningResult {
+        let whitelist = whitelist ?? WhitelistManager.shared
         guard !isCleaning else {
             return CleaningResult(
                 cookiesBefore: 0, cookiesKept: 0, cookiesDeleted: 0,
@@ -692,7 +694,8 @@ public final class CookieStore {
     }
     
     @discardableResult
-    public func clearProfileAppDataCaches(whitelist: WhitelistManager = .shared) async -> CleaningResult {
+    public func clearProfileAppDataCaches(whitelist: WhitelistManager? = nil) async -> CleaningResult {
+        let whitelist = whitelist ?? WhitelistManager.shared
         guard !isCleaning else {
             return CleaningResult(
                 cookiesBefore: 0, cookiesKept: 0, cookiesDeleted: 0,

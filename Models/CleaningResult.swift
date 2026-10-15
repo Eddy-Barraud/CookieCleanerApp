@@ -9,6 +9,7 @@ public struct CleaningResult: Identifiable, Sendable {
     public let bytesFreed: Int64
     public let cacheFilesRemoved: Int
     public let scanFilesRemoved: Int
+    public let profileCachesRemoved: Int
     public let duration: TimeInterval
     public let isSuccess: Bool
     public let errorMessage: String?
@@ -28,6 +29,7 @@ public struct CleaningResult: Identifiable, Sendable {
         bytesFreed: Int64,
         cacheFilesRemoved: Int,
         scanFilesRemoved: Int,
+        profileCachesRemoved: Int = 0,
         duration: TimeInterval,
         isSuccess: Bool = true,
         errorMessage: String? = nil
@@ -39,6 +41,7 @@ public struct CleaningResult: Identifiable, Sendable {
         self.bytesFreed = bytesFreed
         self.cacheFilesRemoved = cacheFilesRemoved
         self.scanFilesRemoved = scanFilesRemoved
+        self.profileCachesRemoved = profileCachesRemoved
         self.duration = duration
         self.isSuccess = isSuccess
         self.errorMessage = errorMessage

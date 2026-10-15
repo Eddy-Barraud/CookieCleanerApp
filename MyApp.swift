@@ -13,7 +13,6 @@ struct MyApp: App {
         AppLogger.shared.debug("🔧 CookieCleanerApp starting in DEBUG mode with verbose logging enabled.")
         #endif
         SafariClosureWatcher.shared.startWatching()
-        BackgroundServiceManager.shared.ensureRegistered()
     }
     
     var body: some Scene {

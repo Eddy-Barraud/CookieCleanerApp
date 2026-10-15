@@ -13,6 +13,7 @@ public struct CumulativeStatsView: View {
     
     @State private var showingFlushAlert: Bool = false
     @State private var showingResetAlert: Bool = false
+    @State private var showingUninstallHelperAlert: Bool = false
     
     public init(
         activeSummaryResult: Binding<CleaningResult?>,
@@ -62,6 +63,18 @@ public struct CumulativeStatsView: View {
         } message: {
             Text("This will reset your lifetime counters (times cleaned, cookies deleted, and bytes freed) back to zero.")
         }
+        .confirmationDialog(
+            "Uninstall Background Helper?",
+            isPresented: $showingUninstallHelperAlert,
+            titleVisibility: .visible
+        ) {
+            Button("Uninstall Helper", role: .destructive) {
+                backgroundService.unregister()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will stop the background daemon and remove it from macOS launchd. CookieCleaner will only clean cookies when the main application is running.")
+        }
     }
     
     // MARK: - Subviews
@@ -105,13 +118,10 @@ public struct CumulativeStatsView: View {
     
     @ViewBuilder
     private var safariAutomationCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "safari.fill")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Safari Automation Setting")
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Safari Automation", systemImage: "bolt.badge.clock.fill")
                         .font(.headline)
                     HStack(spacing: 6) {
                         Circle()
@@ -126,11 +136,15 @@ public struct CumulativeStatsView: View {
                 Spacer()
                 
                 @Bindable var bindableStats = stats
-                Toggle("Auto-clean on Safari Quit", isOn: $bindableStats.autoCleanEnabled)
-                    .toggleStyle(.switch)
+                VStack(alignment: .trailing, spacing: 8) {
+                    Toggle("Auto-clean on Safari Quit", isOn: $bindableStats.autoCleanEnabled)
+                        .toggleStyle(.switch)
+                    Toggle("Clear Profile App Data & Caches", isOn: $bindableStats.clearProfileCachesEnabled)
+                        .toggleStyle(.switch)
+                }
             }
             
-            Text("When enabled, non-whitelisted cookies are automatically cleared from disk whenever Safari quits.")
+            Text("When enabled, non-whitelisted cookies and profile app data caches (WebKit temporary storage, DOM cache, and service workers) are automatically wiped when Safari quits.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -175,13 +189,13 @@ public struct CumulativeStatsView: View {
             }
             
             HStack {
-                Text("Registered with launchd. Runs 24/7 in the background so cookies are cleaned on Safari quit even when this app is closed.")
+                Text("Optional background agent. Runs in the background via launchd so cookies are cleaned on Safari quit even when this app is closed. You can install or uninstall it at any time.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 
                 Spacer()
                 
-                if let hb = backgroundService.lastHeartbeatDate {
+                if let hb = backgroundService.lastHeartbeatDate, backgroundService.state.isOperational {
                     Text("Heartbeat: \(hb.formatted(date: .omitted, time: .standard))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -201,32 +215,54 @@ public struct CumulativeStatsView: View {
     
     @ViewBuilder
     private var serviceActionButton: some View {
-        switch backgroundService.state {
-        case .active:
-            Label("Functional", systemImage: "checkmark.seal.fill")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.green)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.green.opacity(0.12)))
-        case .requiresApproval:
-            Button {
-                backgroundService.openSystemSettings()
-            } label: {
-                Label("Allow in Settings", systemImage: "arrow.up.forward.app")
+        HStack(spacing: 8) {
+            switch backgroundService.state {
+            case .active:
+                Label("Running", systemImage: "checkmark.seal.fill")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.green.opacity(0.12)))
+                
+                Button(role: .destructive) {
+                    showingUninstallHelperAlert = true
+                } label: {
+                    Label("Uninstall Helper", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .controlSize(.small)
+                
+            case .requiresApproval:
+                Button {
+                    backgroundService.openSystemSettings()
+                } label: {
+                    Label("Allow in Settings", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .controlSize(.small)
+                
+                Button(role: .destructive) {
+                    showingUninstallHelperAlert = true
+                } label: {
+                    Label("Uninstall", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .controlSize(.small)
+                
+            case .stopped, .registering, .notFound:
+                Button {
+                    backgroundService.register()
+                } label: {
+                    Label("Install Background Helper", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
-            .controlSize(.small)
-        case .stopped, .registering, .notFound:
-            Button {
-                backgroundService.register()
-            } label: {
-                Label("Register Helper", systemImage: "plus.circle")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
     }
     
@@ -274,6 +310,12 @@ public struct CumulativeStatsView: View {
                                 Text("cookies")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
+                                if profile.cacheSizeBytes > 0 {
+                                    Text(profile.formattedCacheSize)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                }
                             }
                         }
                         .padding(12)
@@ -302,35 +344,51 @@ public struct CumulativeStatsView: View {
     
     @ViewBuilder
     private var actionButtonsBar: some View {
-        HStack(spacing: 14) {
+        VStack(spacing: 10) {
+            HStack(spacing: 14) {
+                Button {
+                    Task {
+                        let result = await cookieStore.cleanCookies(whitelist: whitelistManager)
+                        isSummaryFlush = false
+                        activeSummaryResult = result
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "sparkles")
+                        Text("Clean Non-Whitelisted Now")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(cookieStore.isCleaning)
+                
+                Button {
+                    showingFlushAlert = true
+                } label: {
+                    HStack {
+                        Image(systemName: "flame.fill")
+                        Text("Flush All Cookies")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .controlSize(.large)
+                .disabled(cookieStore.isCleaning)
+            }
+            
             Button {
                 Task {
-                    let result = await cookieStore.cleanCookies(whitelist: whitelistManager)
+                    let result = await cookieStore.clearProfileAppDataCaches(whitelist: whitelistManager)
                     isSummaryFlush = false
                     activeSummaryResult = result
                 }
             } label: {
-                HStack {
-                    Image(systemName: "sparkles")
-                    Text("Clean Non-Whitelisted Now")
-                }
-                .frame(maxWidth: .infinity)
+                Label("Clear Profile App Data Caches Only", systemImage: "internaldrive.fill")
+                    .font(.subheadline)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(cookieStore.isCleaning)
-            
-            Button {
-                showingFlushAlert = true
-            } label: {
-                HStack {
-                    Image(systemName: "flame.fill")
-                    Text("Flush All Cookies")
-                }
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
-            .controlSize(.large)
+            .buttonStyle(.borderless)
+            .foregroundStyle(.blue)
             .disabled(cookieStore.isCleaning)
         }
     }

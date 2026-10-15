@@ -27,14 +27,16 @@ CookieCleaner solves this by:
 - **Domain Distribution Chart**: Visual top-domains bar and breakdown of cookies to be kept vs. purged.
 
 ### 2. 🧹 Targeted Cleaning & Deep Flushing
-- **Clean Action**: Retains whitelisted cookies, safely removes non-whitelisted tracking cookies from `Cookies.binarycookies`, and clears general Safari temporary caches.
-- **Deep Flush**: Flushes all cookies and purges deep WebKit storage:
+- **Clean Action**: Retains whitelisted cookies, safely removes non-whitelisted tracking cookies from `Cookies.binarycookies`, and clears general as well as profile-specific temporary caches (`Caches/`, `Application Cache/`, `DOMCache/`, `ServiceWorkers/`, `ResourceLoadStatistics/`, `WebsiteData/`) and non-whitelisted profile web storage (`LocalStorage`, `IndexedDB`, `GeneralStorage`) across all Safari profiles.
+- **Combined Profile Cache Wiping**: Can be toggled on/off in the Dashboard (`Clear Profile App Data & Caches`), or run on-demand via **Clear Profile App Data Caches Only**.
+- **Deep Flush**: Flushes all cookies and completely purges deep WebKit storage and caches across all profiles:
   - `~/Library/Containers/com.apple.Safari/Data/Library/Caches/...`
+  - `~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/<Profile>/...`
   - `~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteData`
-  - `~/Library/Safari/LocalStorage`
-  - `~/Library/Safari/Databases/___IndexedDB/v1`
+  - `~/Library/Safari/LocalStorage` and per-profile `LocalStorage`
+  - `~/Library/Safari/Databases/___IndexedDB/v1` and per-profile `IndexedDB`
   - `~/Library/WebKit/MediaKeys`
-- **Action Summary**: Detailed summary sheets showing the exact number of cookies removed and disk space freed.
+- **Action Summary**: Detailed summary sheets showing the exact number of cookies removed, profile cache files purged, and disk space freed.
 
 ### 3. 🛡️ Whitelist Manager
 - Add domains or regex patterns (e.g. `.*apple\.com`, `.*github\.com`).
@@ -46,10 +48,11 @@ CookieCleaner solves this by:
 - Automatically triggers cleanup when Safari closes (with a short debounce to allow Safari write buffers to flush to disk).
 - Can be toggled on/off in the Dashboard.
 
-### 5. 🤖 Background Helper Daemon (`CookieCleanerHelper`)
+### 5. 🤖 Optional Background Helper Daemon (`CookieCleanerHelper`)
 - Embedded background agent registered via macOS `SMAppService` (`LaunchAgents/com.eddybarraud.CookieCleanerHelper.plist`).
-- Automatically runs in the background to handle auto-cleaning even when the main CookieCleaner window is closed.
-- Real-time heartbeat tracking and status reporting in the Dashboard.
+- **User-controlled installation**: Not installed automatically at launch or first launch. Users can install or uninstall the background service at any time directly from the Dashboard.
+- When installed, runs in the background via launchd to handle auto-cleaning upon Safari quit even when the main CookieCleaner app is closed.
+- Real-time heartbeat tracking, active PID display, and immediate uninstallation / process termination.
 
 ### 6. 📊 Cumulative Metrics & Real-time Console
 - Tracks historical metrics: total cleans executed, total cookies purged, and total disk space freed.

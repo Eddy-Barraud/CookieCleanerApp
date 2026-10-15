@@ -23,9 +23,9 @@ public enum HelperServiceState: Equatable, Sendable {
         case .registering:
             return "Registering Service..."
         case .stopped:
-            return "Stopped / Not Running"
+            return "Not Installed / Stopped"
         case .notFound:
-            return "Helper Plist Missing"
+            return "Not Installed"
         }
     }
     
@@ -52,51 +52,43 @@ public final class BackgroundServiceManager {
     private init() {
         refreshStatus()
         startPeriodicCheck()
-        ensureRegistered()
     }
     
-    public func ensureRegistered() {
+    public func register() {
         let service = SMAppService.agent(plistName: Self.plistName)
-        if service.status == .enabled {
-            AppLogger.shared.debug("Background helper service is already registered and enabled.")
-            refreshStatus()
-            return
-        }
-        if service.status == .requiresApproval {
-            AppLogger.shared.warning("Background helper requires user approval in macOS System Settings.")
-            refreshStatus()
-            return
-        }
-        
         AppLogger.shared.info("Registering background helper service with launchd...")
         do {
             try service.register()
-            AppLogger.shared.success("Successfully registered background helper service!")
+            AppLogger.shared.success("Background helper registered successfully!")
         } catch {
             AppLogger.shared.error("Failed to register background helper: \(error.localizedDescription)")
         }
         refreshStatus()
     }
     
-    public func register() {
-        let service = SMAppService.agent(plistName: Self.plistName)
-        do {
-            try service.register()
-            AppLogger.shared.success("Background helper registered.")
-        } catch {
-            AppLogger.shared.error("Failed to register: \(error.localizedDescription)")
-        }
-        refreshStatus()
-    }
-    
     public func unregister() {
         let service = SMAppService.agent(plistName: Self.plistName)
+        AppLogger.shared.info("Unregistering background helper service from launchd...")
         do {
             try service.unregister()
-            AppLogger.shared.info("Background helper unregistered.")
+            AppLogger.shared.success("Background helper unregistered successfully.")
         } catch {
-            AppLogger.shared.error("Failed to unregister: \(error.localizedDescription)")
+            AppLogger.shared.warning("Service unregister: \(error.localizedDescription)")
         }
+        
+        // Terminate any active background process for the helper
+        if let pid = self.helperPID, pid > 0, pid != ProcessInfo.processInfo.processIdentifier {
+            kill(pid, SIGTERM)
+            AppLogger.shared.debug("Sent SIGTERM to background helper (PID \(pid))")
+        }
+        
+        // Clear state & persisted heartbeat
+        UserDefaults.standard.removeObject(forKey: "CookieCleanerHelper.lastHeartbeat")
+        UserDefaults.standard.removeObject(forKey: "CookieCleanerHelper.lastPID")
+        self.lastHeartbeatDate = nil
+        self.helperPID = nil
+        self.state = .stopped
+        
         refreshStatus()
     }
     

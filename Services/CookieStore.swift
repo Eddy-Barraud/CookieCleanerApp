@@ -68,7 +68,9 @@ public final class CookieStore {
         // 1. Default Profile
         let defaultURL = primaryCookiesURL
         if FileManager.default.fileExists(atPath: defaultURL.path) {
-            profiles.append(SafariProfile(id: "default", name: "Default Profile", cookieURL: defaultURL))
+            var profile = SafariProfile(id: "default", name: "Default Profile", cookieURL: defaultURL)
+            profile.cacheSizeBytes = profile.calculateCacheSize()
+            profiles.append(profile)
         }
         
         // 2. Custom Profiles in WebsiteDataStore (macOS Sonoma / Sequoia / Safari 17+)
@@ -78,7 +80,9 @@ public final class CookieStore {
                 let candidateURL = URL(fileURLWithPath: "\(dataStorePath)/\(dir)/Cookies/Cookies.binarycookies")
                 if FileManager.default.fileExists(atPath: candidateURL.path) {
                     let displayName = profileNames[dir.uppercased()] ?? profileNames[dir.lowercased()] ?? "Profile (\(dir.prefix(8)))"
-                    profiles.append(SafariProfile(id: dir, name: displayName, cookieURL: candidateURL))
+                    var profile = SafariProfile(id: dir, name: displayName, cookieURL: candidateURL)
+                    profile.cacheSizeBytes = profile.calculateCacheSize()
+                    profiles.append(profile)
                 }
             }
         }
@@ -90,7 +94,9 @@ public final class CookieStore {
                 let candidateURL = URL(fileURLWithPath: "\(legacyPath)/\(dir)/Cookies/Cookies.binarycookies")
                 if FileManager.default.fileExists(atPath: candidateURL.path) && !profiles.contains(where: { $0.cookieURL == candidateURL }) {
                     let displayName = profileNames[dir.uppercased()] ?? profileNames[dir.lowercased()] ?? "Profile (\(dir.prefix(8)))"
-                    profiles.append(SafariProfile(id: dir, name: displayName, cookieURL: candidateURL))
+                    var profile = SafariProfile(id: dir, name: displayName, cookieURL: candidateURL)
+                    profile.cacheSizeBytes = profile.calculateCacheSize()
+                    profiles.append(profile)
                 }
             }
         }
@@ -110,6 +116,160 @@ public final class CookieStore {
         "~/Library/WebKit/MediaKeys",
         "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/MediaKeys"
     ].map { $0.expandingTildeInPath }
+    
+    /// Extract domain or hostname from web storage and IndexedDB file/folder names
+    public static func extractDomain(from storageItemName: String) -> String? {
+        var name = storageItemName.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+        guard !name.isEmpty else { return nil }
+        
+        // Strip common extension like .localstorage, .sqlite3, .db
+        if let lastDot = name.lastIndex(of: ".") {
+            name = String(name[..<lastDot])
+        }
+        // Strip scheme prefixes
+        if name.hasPrefix("https_") {
+            name = String(name.dropFirst(6))
+        } else if name.hasPrefix("http_") {
+            name = String(name.dropFirst(5))
+        }
+        // Strip trailing port/partition index like "_0", "_8080"
+        if let lastUnderscore = name.lastIndex(of: "_") {
+            let suffix = name[name.index(after: lastUnderscore)...]
+            if Int(suffix) != nil {
+                name = String(name[..<lastUnderscore])
+            }
+        }
+        return name.isEmpty ? nil : name
+    }
+    
+    /// Collect all profile and general cache directories to erase
+    public static func allCacheDirectories(for profiles: [SafariProfile]? = nil) -> [String] {
+        var result = Set<String>()
+        
+        // General Safari caches
+        let generalCaches = [
+            "~/Library/Containers/com.apple.Safari/Data/Library/Caches/com.apple.Safari",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Caches/WebKit",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Caches/com.apple.WebKit.Networking",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Caches/com.apple.WebKit.WebContent",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Caches/com.apple.WebKit.GPU",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Caches/com.apple.Safari.SearchHelper",
+            "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteData",
+            "~/Library/Caches/com.apple.Safari",
+            "~/Library/Caches/com.apple.WebKit.Networking",
+            "~/Library/Caches/com.apple.WebKit.WebContent",
+            "~/Library/Caches/com.apple.WebKit.GPU"
+        ].map { $0.expandingTildeInPath }
+        result.formUnion(generalCaches)
+        
+        // Inspect WebsiteDataStore for all subdirectories (Default and UUIDs)
+        let fileManager = FileManager.default
+        let dataStorePath = "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore".expandingTildeInPath
+        if let subdirs = try? fileManager.contentsOfDirectory(atPath: dataStorePath) {
+            for dir in subdirs {
+                let base = "\(dataStorePath)/\(dir)"
+                let targets = [
+                    "\(base)/Caches",
+                    "\(base)/Cache",
+                    "\(base)/Application Cache",
+                    "\(base)/DOMCache",
+                    "\(base)/ResourceLoadStatistics",
+                    "\(base)/ServiceWorkers",
+                    "\(base)/WebsiteData",
+                    "\(base)/GPUCache",
+                    "\(base)/AlternativeServices.binary",
+                    "\(base)/HSTSCache.binary"
+                ]
+                result.formUnion(targets)
+            }
+        }
+        
+        // Inspect Safari/Profiles for all subdirectories
+        let legacyPath = "~/Library/Containers/com.apple.Safari/Data/Library/Safari/Profiles".expandingTildeInPath
+        if let subdirs = try? fileManager.contentsOfDirectory(atPath: legacyPath) {
+            for dir in subdirs {
+                let base = "\(legacyPath)/\(dir)"
+                let targets = [
+                    "\(base)/Caches",
+                    "\(base)/Cache",
+                    "\(base)/WebsiteData",
+                    "\(base)/Favicons",
+                    "\(base)/Touch Icons Cache",
+                    "\(base)/WebpageIcons.db"
+                ]
+                result.formUnion(targets)
+            }
+        }
+        
+        // Profile specific directories
+        if let profiles = profiles {
+            for profile in profiles {
+                result.formUnion(profile.cacheDirectories)
+            }
+        }
+        
+        return Array(result)
+    }
+    
+    /// Collect all profile and general storage directories (LocalStorage, IndexedDB, etc.)
+    public static func allStorageDirectories(for profiles: [SafariProfile]? = nil) -> [String] {
+        var result = Set<String>()
+        
+        // Base storage directories
+        let baseStorages = [
+            "~/Library/Safari/LocalStorage",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Safari/LocalStorage",
+            "~/Library/Safari/Databases/___IndexedDB/v1",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Safari/Databases/___IndexedDB/v1",
+            "~/Library/Containers/com.apple.Safari/Data/Library/Safari/Databases",
+            "~/Library/WebKit/MediaKeys",
+            "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/MediaKeys",
+            "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/LocalStorage",
+            "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/IndexedDB",
+            "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/GeneralStorage",
+            "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/WebStorage"
+        ].map { $0.expandingTildeInPath }
+        result.formUnion(baseStorages)
+        
+        // Inspect WebsiteDataStore for profile storage directories
+        let fileManager = FileManager.default
+        let dataStorePath = "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore".expandingTildeInPath
+        if let subdirs = try? fileManager.contentsOfDirectory(atPath: dataStorePath) {
+            for dir in subdirs {
+                let base = "\(dataStorePath)/\(dir)"
+                let targets = [
+                    "\(base)/LocalStorage",
+                    "\(base)/IndexedDB",
+                    "\(base)/Databases",
+                    "\(base)/WebStorage",
+                    "\(base)/GeneralStorage"
+                ]
+                result.formUnion(targets)
+            }
+        }
+        
+        // Inspect Safari/Profiles
+        let legacyPath = "~/Library/Containers/com.apple.Safari/Data/Library/Safari/Profiles".expandingTildeInPath
+        if let subdirs = try? fileManager.contentsOfDirectory(atPath: legacyPath) {
+            for dir in subdirs {
+                let base = "\(legacyPath)/\(dir)"
+                let targets = [
+                    "\(base)/LocalStorage",
+                    "\(base)/Databases",
+                    "\(base)/IndexedDB"
+                ]
+                result.formUnion(targets)
+            }
+        }
+        
+        if let profiles = profiles {
+            for profile in profiles {
+                result.formUnion(profile.storageDirectories)
+            }
+        }
+        
+        return Array(result)
+    }
     
     public private(set) var permissionStatus: PermissionStatus = .unknown
     public private(set) var isCleaning: Bool = false
@@ -309,62 +469,30 @@ public final class CookieStore {
             return failedResult
         }
         
-        // Cache directories
+        // Cache and App Data Cleaning
         var totalCacheFilesRemoved = 0
-        let fileManager = FileManager.default
-        
-        var dirsToErase = Self.dirsToErase
-        let dataStorePath = "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore".expandingTildeInPath
-        if let subdirs = try? fileManager.contentsOfDirectory(atPath: dataStorePath) {
-            for dir in subdirs {
-                let profileCaches = "\(dataStorePath)/\(dir)/Caches"
-                if fileManager.fileExists(atPath: profileCaches) {
-                    dirsToErase.append(profileCaches)
-                }
-            }
-        }
-        
-        for dir in dirsToErase {
-            guard fileManager.fileExists(atPath: dir) else { continue }
-            let enumerator = fileManager.enumerator(atPath: dir)
-            var itemsToRemove: [String] = []
-            while let item = enumerator?.nextObject() as? String {
-                itemsToRemove.append(item)
-            }
-            
-            for item in itemsToRemove.reversed() {
-                let fullPath = (dir as NSString).appendingPathComponent(item)
-                let itemSize = fileManager.fileSize(atPath: fullPath)
-                do {
-                    try fileManager.removeItem(atPath: fullPath)
-                    totalBytesFreed += itemSize
-                    totalCacheFilesRemoved += 1
-                } catch {}
-            }
-        }
-        
-        // Scan directories
         var totalScanFilesRemoved = 0
-        for dir in Self.dirsToScan {
-            guard fileManager.fileExists(atPath: dir) else { continue }
-            let enumerator = fileManager.enumerator(atPath: dir)
-            var itemsToRemove: [String] = []
-            while let item = enumerator?.nextObject() as? String {
-                let cleanItem = item.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
-                if !whitelist.isWhitelisted(test: cleanItem) {
-                    itemsToRemove.append(item)
-                }
-            }
-            
-            for item in itemsToRemove.reversed() {
-                let fullPath = (dir as NSString).appendingPathComponent(item)
-                let itemSize = fileManager.fileSize(atPath: fullPath)
-                do {
-                    try fileManager.removeItem(atPath: fullPath)
-                    totalBytesFreed += itemSize
-                    totalScanFilesRemoved += 1
-                } catch {}
-            }
+        var profileCachesRemoved = 0
+        
+        let shouldClearProfileCaches = CumulativeStatsManager.shared.clearProfileCachesEnabled
+        let dirsToErase = shouldClearProfileCaches ? Self.allCacheDirectories(for: profiles) : Self.dirsToErase
+        let dirsToScan = shouldClearProfileCaches ? Self.allStorageDirectories(for: profiles) : Self.dirsToScan
+        
+        if shouldClearProfileCaches {
+            AppLogger.shared.info("📦 Clearing app data cache & storage across \(profiles.count) Safari profile(s)...")
+        }
+        
+        let (cacheFreed, cacheCount) = eraseDirectories(dirsToErase)
+        totalBytesFreed += cacheFreed
+        totalCacheFilesRemoved += cacheCount
+        
+        let (storageFreed, storageCount) = scanAndCleanStorageDirectories(dirsToScan, whitelist: whitelist)
+        totalBytesFreed += storageFreed
+        totalScanFilesRemoved += storageCount
+        
+        if shouldClearProfileCaches {
+            profileCachesRemoved = cacheCount + storageCount
+            AppLogger.shared.success("✨ Removed \(profileCachesRemoved) profile cache & storage files (\(ByteCountFormatter.string(fromByteCount: cacheFreed + storageFreed, countStyle: .file)) freed)")
         }
         
         let duration = Date().timeIntervalSince(startTime)
@@ -376,6 +504,7 @@ public final class CookieStore {
             bytesFreed: totalBytesFreed,
             cacheFilesRemoved: totalCacheFilesRemoved,
             scanFilesRemoved: totalScanFilesRemoved,
+            profileCachesRemoved: profileCachesRemoved,
             duration: duration,
             isSuccess: encounteredError == nil,
             errorMessage: encounteredError
@@ -386,6 +515,9 @@ public final class CookieStore {
         
         CumulativeStatsManager.shared.recordCleaning(result: result)
         _ = try? loadCookies(whitelist: whitelist)
+        
+        // Refresh profile cache sizes after cleaning
+        self.discoveredProfiles = Self.discoverProfiles()
         
         return result
     }
@@ -523,26 +655,17 @@ public final class CookieStore {
             }
         }
         
-        // Cache wipe
-        let fileManager = FileManager.default
+        // Cache and Storage wipe across all profiles
         var totalCacheFilesRemoved = 0
-        for dir in Self.dirsToErase {
-            guard fileManager.fileExists(atPath: dir) else { continue }
-            let enumerator = fileManager.enumerator(atPath: dir)
-            var itemsToRemove: [String] = []
-            while let item = enumerator?.nextObject() as? String {
-                itemsToRemove.append(item)
-            }
-            for item in itemsToRemove.reversed() {
-                let fullPath = (dir as NSString).appendingPathComponent(item)
-                let itemSize = fileManager.fileSize(atPath: fullPath)
-                do {
-                    try fileManager.removeItem(atPath: fullPath)
-                    totalBytesFreed += itemSize
-                    totalCacheFilesRemoved += 1
-                } catch {}
-            }
-        }
+        let allCaches = Self.allCacheDirectories(for: profiles)
+        let (cacheFreed, cacheCount) = eraseDirectories(allCaches)
+        totalBytesFreed += cacheFreed
+        totalCacheFilesRemoved += cacheCount
+        
+        let allStorages = Self.allStorageDirectories(for: profiles)
+        let (storageFreed, storageCount) = eraseDirectories(allStorages)
+        totalBytesFreed += storageFreed
+        totalCacheFilesRemoved += storageCount
         
         let duration = Date().timeIntervalSince(startTime)
         let result = CleaningResult(
@@ -552,6 +675,7 @@ public final class CookieStore {
             bytesFreed: totalBytesFreed,
             cacheFilesRemoved: totalCacheFilesRemoved,
             scanFilesRemoved: 0,
+            profileCachesRemoved: totalCacheFilesRemoved,
             duration: duration,
             isSuccess: encounteredError == nil,
             errorMessage: encounteredError
@@ -562,6 +686,135 @@ public final class CookieStore {
         CumulativeStatsManager.shared.recordCleaning(result: result)
         _ = try? loadCookies()
         
+        self.discoveredProfiles = Self.discoverProfiles()
+        
         return result
+    }
+    
+    @discardableResult
+    public func clearProfileAppDataCaches(whitelist: WhitelistManager = .shared) async -> CleaningResult {
+        guard !isCleaning else {
+            return CleaningResult(
+                cookiesBefore: 0, cookiesKept: 0, cookiesDeleted: 0,
+                bytesFreed: 0, cacheFilesRemoved: 0, scanFilesRemoved: 0,
+                profileCachesRemoved: 0, duration: 0, isSuccess: false, errorMessage: "Cleaning already in progress"
+            )
+        }
+        
+        isCleaning = true
+        defer { isCleaning = false }
+        
+        let startTime = Date()
+        AppLogger.shared.info("🧼 Clearing app data caches & storage across all Safari profiles...")
+        
+        let profiles = Self.discoverProfiles()
+        self.discoveredProfiles = profiles
+        
+        let allCaches = Self.allCacheDirectories(for: profiles)
+        let (cacheFreed, cacheCount) = eraseDirectories(allCaches)
+        
+        let allStorages = Self.allStorageDirectories(for: profiles)
+        let (storageFreed, storageCount) = scanAndCleanStorageDirectories(allStorages, whitelist: whitelist)
+        
+        let totalFreed = cacheFreed + storageFreed
+        let duration = Date().timeIntervalSince(startTime)
+        let totalFiles = cacheCount + storageCount
+        
+        let result = CleaningResult(
+            cookiesBefore: loadedCookies.count,
+            cookiesKept: loadedCookies.count,
+            cookiesDeleted: 0,
+            bytesFreed: totalFreed,
+            cacheFilesRemoved: cacheCount,
+            scanFilesRemoved: storageCount,
+            profileCachesRemoved: totalFiles,
+            duration: duration,
+            isSuccess: true,
+            errorMessage: nil
+        )
+        
+        self.lastResult = result
+        AppLogger.shared.success("🏁 Profile app data cache cleanup finished: \(totalFiles) files removed, \(result.formattedBytesFreed) freed across \(profiles.count) profile(s).")
+        CumulativeStatsManager.shared.recordCleaning(result: result)
+        
+        self.discoveredProfiles = Self.discoverProfiles()
+        
+        return result
+    }
+    
+    @discardableResult
+    private func eraseDirectories(_ dirs: [String]) -> (bytesFreed: Int64, filesRemoved: Int) {
+        let fileManager = FileManager.default
+        var totalFreed: Int64 = 0
+        var totalRemoved = 0
+        
+        for dir in dirs {
+            guard fileManager.fileExists(atPath: dir) else { continue }
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: dir, isDirectory: &isDir) else { continue }
+            
+            if isDir.boolValue {
+                let enumerator = fileManager.enumerator(atPath: dir)
+                var itemsToRemove: [String] = []
+                while let item = enumerator?.nextObject() as? String {
+                    itemsToRemove.append(item)
+                }
+                
+                for item in itemsToRemove.reversed() {
+                    let fullPath = (dir as NSString).appendingPathComponent(item)
+                    let itemSize = fileManager.fileSize(atPath: fullPath)
+                    do {
+                        try fileManager.removeItem(atPath: fullPath)
+                        totalFreed += itemSize
+                        totalRemoved += 1
+                    } catch {}
+                }
+            } else {
+                let itemSize = fileManager.fileSize(atPath: dir)
+                do {
+                    try fileManager.removeItem(atPath: dir)
+                    totalFreed += itemSize
+                    totalRemoved += 1
+                } catch {}
+            }
+        }
+        
+        return (totalFreed, totalRemoved)
+    }
+    
+    @discardableResult
+    private func scanAndCleanStorageDirectories(_ dirs: [String], whitelist: WhitelistManager) -> (bytesFreed: Int64, filesRemoved: Int) {
+        let fileManager = FileManager.default
+        var totalFreed: Int64 = 0
+        var totalRemoved = 0
+        
+        for dir in dirs {
+            guard fileManager.fileExists(atPath: dir) else { continue }
+            let enumerator = fileManager.enumerator(atPath: dir)
+            var itemsToRemove: [String] = []
+            while let item = enumerator?.nextObject() as? String {
+                let cleanItem = item.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+                let extractedDomain = Self.extractDomain(from: cleanItem)
+                
+                let isRawWhitelisted = whitelist.isWhitelisted(test: cleanItem)
+                let isDomainWhitelisted = extractedDomain.map { whitelist.isWhitelisted(test: $0) } ?? false
+                
+                if !isRawWhitelisted && !isDomainWhitelisted {
+                    itemsToRemove.append(item)
+                }
+            }
+            
+            for item in itemsToRemove.reversed() {
+                let fullPath = (dir as NSString).appendingPathComponent(item)
+                let itemSize = fileManager.fileSize(atPath: fullPath)
+                do {
+                    try fileManager.removeItem(atPath: fullPath)
+                    totalFreed += itemSize
+                    totalRemoved += 1
+                } catch {}
+            }
+        }
+        
+        return (totalFreed, totalRemoved)
     }
 }

@@ -73,6 +73,17 @@ public struct ActionSummarySheet: View {
                         .monospacedDigit()
                 }
                 
+                if result.profileCachesRemoved > 0 {
+                    GridRow {
+                        Text("Profile App Data Caches:")
+                            .foregroundStyle(.secondary)
+                        Text("\(result.profileCachesRemoved) files cleaned")
+                            .fontWeight(.bold)
+                            .monospacedDigit()
+                            .foregroundStyle(.blue)
+                    }
+                }
+                
                 GridRow {
                     Text("Duration:")
                         .foregroundStyle(.secondary)

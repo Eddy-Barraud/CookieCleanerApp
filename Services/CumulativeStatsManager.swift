@@ -11,6 +11,7 @@ public final class CumulativeStatsManager {
     private let totalBytesFreedKey = "CookieCleaner.totalBytesFreed"
     private let lastCleanedDateKey = "CookieCleaner.lastCleanedDate"
     private let autoCleanEnabledKey = "CookieCleaner.autoCleanEnabled"
+    private let clearProfileCachesEnabledKey = "CookieCleaner.clearProfileCachesEnabled"
     
     public private(set) var timesCleaned: Int = 0
     public private(set) var totalCookiesDeleted: Int = 0
@@ -19,6 +20,11 @@ public final class CumulativeStatsManager {
     public var autoCleanEnabled: Bool {
         didSet {
             UserDefaults.standard.set(autoCleanEnabled, forKey: autoCleanEnabledKey)
+        }
+    }
+    public var clearProfileCachesEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(clearProfileCachesEnabled, forKey: clearProfileCachesEnabledKey)
         }
     }
     
@@ -40,6 +46,12 @@ public final class CumulativeStatsManager {
             self.autoCleanEnabled = true
         } else {
             self.autoCleanEnabled = defaults.bool(forKey: autoCleanEnabledKey)
+        }
+        
+        if defaults.object(forKey: clearProfileCachesEnabledKey) == nil {
+            self.clearProfileCachesEnabled = true
+        } else {
+            self.clearProfileCachesEnabled = defaults.bool(forKey: clearProfileCachesEnabledKey)
         }
     }
     

@@ -1,7 +1,14 @@
 import SwiftUI
 import AppIntents
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+}
+
 struct MyApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var watcher = SafariClosureWatcher.shared
     @State private var cookieStore = CookieStore.shared
     @State private var whitelistManager = WhitelistManager.shared

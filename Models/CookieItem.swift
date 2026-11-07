@@ -11,6 +11,7 @@ public struct CookieItem: Identifiable, Hashable, Sendable {
     public let creation: Date?
     public let expiration: Date?
     public let isWhitelisted: Bool
+    public let isProfileCleaningEnabled: Bool
     public let isSecure: Bool
     public let isHTTPOnly: Bool
     
@@ -33,6 +34,7 @@ public struct CookieItem: Identifiable, Hashable, Sendable {
         creation: Date?,
         expiration: Date?,
         isWhitelisted: Bool,
+        isProfileCleaningEnabled: Bool = true,
         isSecure: Bool,
         isHTTPOnly: Bool
     ) {
@@ -46,6 +48,7 @@ public struct CookieItem: Identifiable, Hashable, Sendable {
         self.creation = creation
         self.expiration = expiration
         self.isWhitelisted = isWhitelisted
+        self.isProfileCleaningEnabled = isProfileCleaningEnabled
         self.isSecure = isSecure
         self.isHTTPOnly = isHTTPOnly
     }

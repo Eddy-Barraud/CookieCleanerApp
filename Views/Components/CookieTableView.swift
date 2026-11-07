@@ -139,15 +139,24 @@ public struct CookieTableView: View {
             Table(filteredCookies, selection: $selectedCookieIds) {
                 TableColumn("Status") { cookie in
                     HStack(spacing: 6) {
-                        Image(systemName: cookie.isWhitelisted ? "shield.checkmark.fill" : "trash.fill")
-                            .foregroundStyle(cookie.isWhitelisted ? .green : .red)
-                        Text(cookie.isWhitelisted ? "Kept" : "Delete")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundStyle(cookie.isWhitelisted ? .green : .red)
+                        if !cookie.isProfileCleaningEnabled {
+                            Image(systemName: "pause.circle.fill")
+                                .foregroundStyle(.orange)
+                            Text("Skipped")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.orange)
+                        } else {
+                            Image(systemName: cookie.isWhitelisted ? "shield.checkmark.fill" : "trash.fill")
+                                .foregroundStyle(cookie.isWhitelisted ? .green : .red)
+                            Text(cookie.isWhitelisted ? "Kept" : "Delete")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundStyle(cookie.isWhitelisted ? .green : .red)
+                        }
                     }
                 }
-                .width(min: 75, ideal: 85, max: 95)
+                .width(min: 80, ideal: 90, max: 105)
                 
                 TableColumn("Domain") { cookie in
                     Text(cookie.cleanDomain)
@@ -233,9 +242,9 @@ public struct CookieTableView: View {
                     
                     if !single.isWhitelisted {
                         Button {
-                            whitelistDomain(single.cleanDomain)
+                            whitelistDomain(single.cleanDomain, profileId: single.profileId)
                         } label: {
-                            Label("Add '\(single.cleanDomain)' to Whitelist", systemImage: "shield.badge.plus")
+                            Label("Add '\(single.cleanDomain)' to \(single.profileName) Whitelist", systemImage: "shield.badge.plus")
                         }
                     }
                 }
@@ -295,14 +304,8 @@ public struct CookieTableView: View {
         }
     }
     
-    private func whitelistDomain(_ domain: String) {
-        let newRule = "(^|\\.)\(NSRegularExpression.escapedPattern(for: domain))$"
-        var current = whitelistManager.rawContent
-        if !current.hasSuffix("\n") && !current.isEmpty {
-            current += "\n"
-        }
-        current += "\(newRule)\n"
-        whitelistManager.updateWhitelist(content: current)
+    private func whitelistDomain(_ domain: String, profileId: String) {
+        whitelistManager.addRule(forDomain: domain, profileId: profileId)
         _ = try? cookieStore.loadCookies(whitelist: whitelistManager)
     }
 }

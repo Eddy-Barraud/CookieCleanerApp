@@ -97,6 +97,9 @@ public final class SafariClosureWatcher {
         
         AppLogger.shared.info("🛑 Safari closed by user (PID: \(app.processIdentifier))")
         
+        CumulativeStatsManager.shared.reloadFromDefaults()
+        WhitelistManager.shared.reloadFromDefaults()
+        
         guard CumulativeStatsManager.shared.autoCleanEnabled else {
             AppLogger.shared.info("⏸️ Auto-clean on Safari Quit is disabled in settings. Skipping cleanup.")
             return

@@ -286,15 +286,27 @@ public struct CumulativeStatsView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(cookieStore.discoveredProfiles) { profile in
                         let count = cookieStore.loadedCookies.filter { $0.profileName == profile.name }.count
+                        let isEnabled = whitelistManager.isProfileCleaningEnabled(profileId: profile.id)
                         HStack(spacing: 12) {
                             Image(systemName: profile.id == "default" ? "star.fill" : "person.fill")
                                 .foregroundStyle(profile.id == "default" ? .yellow : .blue)
                                 .frame(width: 24)
                             
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(profile.name)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
+                                HStack(spacing: 4) {
+                                    Text(profile.name)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    if !isEnabled {
+                                        Text("Paused")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.orange)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Capsule().fill(Color.orange.opacity(0.15)))
+                                    }
+                                }
                                 Text(profile.cookieURL.lastPathComponent)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
@@ -302,6 +314,16 @@ public struct CumulativeStatsView: View {
                             }
                             
                             Spacer()
+                            
+                            Button {
+                                whitelistManager.setProfileCleaningEnabled(!isEnabled, for: profile.id)
+                                _ = try? cookieStore.loadCookies(whitelist: whitelistManager)
+                            } label: {
+                                Image(systemName: isEnabled ? "checkmark.shield.fill" : "pause.circle.fill")
+                                    .foregroundStyle(isEnabled ? .green : .orange)
+                            }
+                            .buttonStyle(.plain)
+                            .help(isEnabled ? "Click to deactivate cleaning for \(profile.name)" : "Click to activate cleaning for \(profile.name)")
                             
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("\(count)")

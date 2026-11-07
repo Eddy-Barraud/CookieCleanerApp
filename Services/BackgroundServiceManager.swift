@@ -99,6 +99,7 @@ public final class BackgroundServiceManager {
     }
     
     public func refreshStatus() {
+        CumulativeStatsManager.shared.reloadFromDefaults()
         let service = SMAppService.agent(plistName: Self.plistName)
         let lastHb = UserDefaults.standard.double(forKey: "CookieCleanerHelper.lastHeartbeat")
         let pid = Int32(UserDefaults.standard.integer(forKey: "CookieCleanerHelper.lastPID"))

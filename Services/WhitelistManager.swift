@@ -258,23 +258,51 @@ public final class WhitelistManager {
     }
     
     /// Evaluates whether a domain string matches any compiled regex rule in the specified profile's whitelist.
+    ///
+    /// - Parameters:
+    ///   - test: The candidate domain or URL host string (e.g., ".github.com" or "apple.com").
+    ///   - profileId: The target Safari profile identifier (e.g., "default" or UUID).
+    /// - Returns: True if any compiled regex rule matches the candidate domain, false otherwise.
     public func isWhitelisted(test: String, profileId: String = "default") -> Bool {
-        // Strip leading/trailing whitespace and null characters from domain
+        // Strip leading/trailing whitespace and null characters from candidate domain
         let clean = test.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+        // Guard against empty input strings
         guard !clean.isEmpty else { return false }
         
-        // Retrieve compiled regex array for the given profile ID
-        guard let regexList = regexListByProfile[profileId] else {
-            return false
-        }
+        // Prepare normalized version without leading dot (e.g., ".apple.com" -> "apple.com")
+        let cleanWithoutDot = clean.hasPrefix(".") ? String(clean.dropFirst()) : clean
         
-        // Check each regex for a match across the full UTF-16 length of the domain
+        // Retrieve compiled regex array for the given profile ID, falling back to "default" if profile not yet customized
+        let regexList = regexListByProfile[profileId] ?? regexListByProfile["default"] ?? []
+        // Return false if no rules are available for evaluation
+        guard !regexList.isEmpty else { return false }
+        
+        // Check each regex for a match against either raw domain or normalized domain without leading dot
         for regex in regexList {
-            let range = NSRange(location: 0, length: clean.utf16.count)
-            if regex.firstMatch(in: clean, options: [], range: range) != nil {
+            // Compute UTF-16 ranges for both candidate representations
+            let rangeFull = NSRange(location: 0, length: clean.utf16.count)
+            let rangeClean = NSRange(location: 0, length: cleanWithoutDot.utf16.count)
+            
+            // Check match against the full candidate string
+            if regex.firstMatch(in: clean, options: [], range: rangeFull) != nil {
+                #if DEBUG
+                // Log debug trace of successful whitelist match
+                AppLogger.shared.debug("🛡️ Whitelist match for domain '\(clean)' in profile '\(profileId)' using pattern '\(regex.pattern)'")
+                #endif
+                return true
+            }
+            
+            // Check match against normalized string without leading dot (supports anchored ^...$ regexes)
+            if regex.firstMatch(in: cleanWithoutDot, options: [], range: rangeClean) != nil {
+                #if DEBUG
+                // Log debug trace of successful whitelist match via dot-stripped normalization
+                AppLogger.shared.debug("🛡️ Whitelist match for stripped domain '\(cleanWithoutDot)' in profile '\(profileId)' using pattern '\(regex.pattern)'")
+                #endif
                 return true
             }
         }
+        
+        // Candidate did not match any active regex rules
         return false
     }
 }

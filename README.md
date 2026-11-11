@@ -48,11 +48,22 @@ CookieCleaner solves this by:
 - Automatically triggers cleanup when Safari closes (with a short debounce to allow Safari write buffers to flush to disk).
 - Can be toggled on/off in the Dashboard.
 
-### 5. 🤖 Optional Background Helper Daemon (`CookieCleanerHelper`)
-- Embedded background agent registered via macOS `SMAppService` (`LaunchAgents/com.eddybarraud.CookieCleanerHelper.plist`).
-- **User-controlled installation**: Not installed automatically at launch or first launch. Users can install or uninstall the background service at any time directly from the Dashboard.
-- When installed, runs in the background via launchd to handle auto-cleaning upon Safari quit even when the main CookieCleaner app is closed.
-- Real-time heartbeat tracking, active PID display, and immediate uninstallation / process termination.
+### 5. 🤖 Background Helper Daemon (`CookieCleanerHelper`) & Parity with "Clean" Button
+- **Exact Parity with GUI Clean Button**: The background helper daemon executes the exact same cleaning logic as clicking the **"Clean Non-Whitelisted Now"** button in the GUI application:
+  - Iterates over all active (enabled) Safari profiles.
+  - Cleans non-whitelisted cookies from `Cookies.binarycookies` atomically.
+  - Cleans profile data cache storage (`CacheStorage`, `DOMCache`, `ServiceWorkers`, `GPUCache`, `ResourceLoadStatistics`, WebKit caches) and non-whitelisted web storage (`LocalStorage`, `IndexedDB`, `GeneralStorage`).
+  - Records cumulative metrics (cookies deleted, disk space freed) in synchronized persistent storage.
+- **Embedded LaunchAgent**: Registered via macOS `SMAppService` (`LaunchAgents/com.eddybarraud.CookieCleanerHelper.plist`). Runs in the background via launchd (`RunLoop.main.run()`) when the main GUI app is closed.
+- **Automatic Clean on Safari Exit**: Listens for Safari process termination notifications, waits briefly for write buffers to flush to disk, synchronizes cross-process preferences, and cleans all active profiles.
+- **Automatic Startup Clean**: If Safari is already closed when the helper daemon launches, it performs an initial cleanup automatically.
+- **CLI Clean Command (`--clean` / `-c`)**: Supports headless one-shot cleaning directly from the command line:
+  ```bash
+  CookieCleanerHelper --clean
+  # or
+  CookieCleanerApp --clean
+  ```
+- **User-controlled installation**: Not installed automatically at launch. Users can install, monitor (PID and heartbeats), or uninstall the background service at any time directly from the Dashboard.
 
 ### 6. 📊 Cumulative Metrics & Real-time Console
 - Tracks historical metrics: total cleans executed, total cookies purged, and total disk space freed.

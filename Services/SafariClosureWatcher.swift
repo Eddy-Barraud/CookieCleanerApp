@@ -114,18 +114,21 @@ public final class SafariClosureWatcher {
             #endif
             return
         }
+        // Persist debounce timestamp and synchronize across processes immediately
         UserDefaults.standard.set(now, forKey: lastCleanKey)
+        UserDefaults.standard.synchronize()
+        CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
         
         #if DEBUG
         AppLogger.shared.debug("⏳ Waiting 1.0 second to allow Safari's SQLite/binary write buffers to flush to disk...")
         #endif
         
-        Task {
+        Task { @MainActor in
             // Wait 1.0 second for Safari to finish closing file descriptors
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             
             AppLogger.shared.info("⚡ Background Task Triggered: Cleaning Safari cookies & cache...")
-            let result = await CookieStore.shared.cleanCookies(whitelist: WhitelistManager.shared)
+            let result = await CookieCleanerHelperDaemon.shared.performClean()
             
             if result.isSuccess {
                 AppLogger.shared.success("✨ Auto-clean on Safari quit succeeded! (\(result.cookiesDeleted) deleted, \(result.formattedBytesFreed) freed)")
@@ -133,5 +136,55 @@ public final class SafariClosureWatcher {
                 AppLogger.shared.error("💥 Auto-clean on Safari quit failed: \(result.errorMessage ?? "Unknown error")")
             }
         }
+    }
+    
+    /// Triggers the full cleaning routine if Safari is not currently running and debounce permits.
+    ///
+    /// - Returns: The CleaningResult if a cleanup was executed, or nil if skipped.
+    @discardableResult
+    public func cleanIfSafariClosed() async -> CleaningResult? {
+        // Refresh running application status
+        checkCurrentSafariState()
+        // If Safari is running, skip immediate cleanup to avoid writing over active buffers
+        guard !isSafariRunning else {
+            #if DEBUG
+            AppLogger.shared.debug("Safari is currently running, skipping immediate background cleanup.")
+            #endif
+            return nil
+        }
+        
+        // Synchronize and reload preferences from disk
+        CumulativeStatsManager.shared.reloadFromDefaults()
+        WhitelistManager.shared.reloadFromDefaults()
+        
+        // Ensure autoCleanEnabled is active
+        guard CumulativeStatsManager.shared.autoCleanEnabled else {
+            return nil
+        }
+        
+        // Check debounce interval to avoid duplicate runs across GUI and daemon
+        let now = Date().timeIntervalSince1970
+        let lastCleanKey = "CookieCleaner.lastAutoCleanTimestamp"
+        let lastClean = UserDefaults.standard.double(forKey: lastCleanKey)
+        if now - lastClean < 4.0 {
+            #if DEBUG
+            AppLogger.shared.debug("Cleanup already performed within last 4s. Skipping duplicate.")
+            #endif
+            return nil
+        }
+        
+        // Persist timestamp and flush cross-process
+        UserDefaults.standard.set(now, forKey: lastCleanKey)
+        UserDefaults.standard.synchronize()
+        CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
+        
+        AppLogger.shared.info("⚡ Background Task: Safari is closed, executing cleanup routine...")
+        let result = await CookieCleanerHelperDaemon.shared.performClean()
+        if result.isSuccess {
+            AppLogger.shared.success("✨ Background cleanup succeeded! (\(result.cookiesDeleted) deleted, \(result.formattedBytesFreed) freed)")
+        } else {
+            AppLogger.shared.error("💥 Background cleanup failed: \(result.errorMessage ?? "Unknown error")")
+        }
+        return result
     }
 }

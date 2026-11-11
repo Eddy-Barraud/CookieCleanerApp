@@ -22,10 +22,12 @@ public struct SafariProfile: Identifiable, Hashable, Sendable {
         return cookieURL.deletingLastPathComponent().deletingLastPathComponent()
     }
     
-    /// Pure cache directories for this specific profile
+/// Pure cache directories for this specific profile (temporary network, rendering, and service worker caches)
     public var cacheDirectories: [String] {
+        // Initialize collection of directory paths to return
         var dirs: [String] = []
         if id == "default" {
+            // General Safari and WebKit cache stores belonging to the default browsing profile
             dirs.append(contentsOf: [
                 "~/Library/Containers/com.apple.Safari/Data/Library/Caches/com.apple.Safari",
                 "~/Library/Containers/com.apple.Safari/Data/Library/Caches/WebKit",
@@ -42,12 +44,20 @@ public struct SafariProfile: Identifiable, Hashable, Sendable {
                 "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/ServiceWorkers",
                 "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/WebsiteData",
                 "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/GPUCache",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/CacheStorage",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/origin-cache",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/ServiceWorkerRegistrations",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/WebCache",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/FileSystem",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/AlternativeServices.binary",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/HSTSCache.binary",
                 "~/Library/Caches/com.apple.Safari",
                 "~/Library/Caches/com.apple.WebKit.Networking",
                 "~/Library/Caches/com.apple.WebKit.WebContent",
                 "~/Library/Caches/com.apple.WebKit.GPU"
             ].map { $0.expandingTildeInPath })
         } else if let base = profileDirectoryURL?.path {
+            // WebKit cache directories scoped to a specific custom profile UUID container
             dirs.append(contentsOf: [
                 "\(base)/Caches",
                 "\(base)/Cache",
@@ -57,6 +67,11 @@ public struct SafariProfile: Identifiable, Hashable, Sendable {
                 "\(base)/ServiceWorkers",
                 "\(base)/WebsiteData",
                 "\(base)/GPUCache",
+                "\(base)/CacheStorage",
+                "\(base)/origin-cache",
+                "\(base)/ServiceWorkerRegistrations",
+                "\(base)/WebCache",
+                "\(base)/FileSystem",
                 "\(base)/AlternativeServices.binary",
                 "\(base)/HSTSCache.binary"
             ])
@@ -64,10 +79,12 @@ public struct SafariProfile: Identifiable, Hashable, Sendable {
         return dirs
     }
     
-    /// Web storage directories for this profile (LocalStorage, IndexedDB, etc.)
+    /// Web storage directories for this profile (LocalStorage, IndexedDB, GeneralStorage, etc.)
     public var storageDirectories: [String] {
+        // Initialize collection of web storage directory paths
         var dirs: [String] = []
         if id == "default" {
+            // Default profile LocalStorage, IndexedDB databases, and media encryption keys
             dirs.append(contentsOf: [
                 "~/Library/Safari/LocalStorage",
                 "~/Library/Containers/com.apple.Safari/Data/Library/Safari/LocalStorage",
@@ -79,15 +96,19 @@ public struct SafariProfile: Identifiable, Hashable, Sendable {
                 "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/LocalStorage",
                 "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/IndexedDB",
                 "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/GeneralStorage",
-                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/WebStorage"
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/WebStorage",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/Databases",
+                "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore/Default/MediaKeys"
             ].map { $0.expandingTildeInPath })
         } else if let base = profileDirectoryURL?.path {
+            // Custom profile WebKit storage locations scoped by UUID
             dirs.append(contentsOf: [
                 "\(base)/LocalStorage",
                 "\(base)/IndexedDB",
                 "\(base)/Databases",
                 "\(base)/WebStorage",
-                "\(base)/GeneralStorage"
+                "\(base)/GeneralStorage",
+                "\(base)/MediaKeys"
             ])
         }
         return dirs

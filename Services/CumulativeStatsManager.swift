@@ -32,15 +32,19 @@ public final class CumulativeStatsManager {
     /// Controls whether the app or daemon automatically cleans when Safari quits.
     public var autoCleanEnabled: Bool = true {
         didSet {
-            // Persist updated auto-clean toggle to UserDefaults
+            // Persist updated auto-clean toggle to UserDefaults and flush cross-process
             UserDefaults.standard.set(autoCleanEnabled, forKey: autoCleanEnabledKey)
+            UserDefaults.standard.synchronize()
+            CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
         }
     }
     /// Controls whether profile app data caches and web storage are cleared alongside cookies.
     public var clearProfileCachesEnabled: Bool = true {
         didSet {
-            // Persist updated profile cache toggle to UserDefaults
+            // Persist updated profile cache toggle to UserDefaults and flush cross-process
             UserDefaults.standard.set(clearProfileCachesEnabled, forKey: clearProfileCachesEnabledKey)
+            UserDefaults.standard.synchronize()
+            CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
         }
     }
     

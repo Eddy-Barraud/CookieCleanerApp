@@ -77,8 +77,10 @@ public final class CookieStore {
         let dataStorePath = "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/WebsiteDataStore".expandingTildeInPath
         if let subdirs = try? FileManager.default.contentsOfDirectory(atPath: dataStorePath) {
             for dir in subdirs {
+                // Skip the "Default" data store directory to prevent duplicate profile registration
+                if dir.lowercased() == "default" { continue }
                 let candidateURL = URL(fileURLWithPath: "\(dataStorePath)/\(dir)/Cookies/Cookies.binarycookies")
-                if FileManager.default.fileExists(atPath: candidateURL.path) {
+                if FileManager.default.fileExists(atPath: candidateURL.path) && !profiles.contains(where: { $0.cookieURL == candidateURL || $0.id == dir }) {
                     let displayName = profileNames[dir.uppercased()] ?? profileNames[dir.lowercased()] ?? "Profile (\(dir.prefix(8)))"
                     var profile = SafariProfile(id: dir, name: displayName, cookieURL: candidateURL)
                     profile.cacheSizeBytes = profile.calculateCacheSize()
@@ -91,8 +93,9 @@ public final class CookieStore {
         let legacyPath = "~/Library/Containers/com.apple.Safari/Data/Library/Safari/Profiles".expandingTildeInPath
         if let subdirs = try? FileManager.default.contentsOfDirectory(atPath: legacyPath) {
             for dir in subdirs {
+                if dir.lowercased() == "default" { continue }
                 let candidateURL = URL(fileURLWithPath: "\(legacyPath)/\(dir)/Cookies/Cookies.binarycookies")
-                if FileManager.default.fileExists(atPath: candidateURL.path) && !profiles.contains(where: { $0.cookieURL == candidateURL }) {
+                if FileManager.default.fileExists(atPath: candidateURL.path) && !profiles.contains(where: { $0.cookieURL == candidateURL || $0.id == dir }) {
                     let displayName = profileNames[dir.uppercased()] ?? profileNames[dir.lowercased()] ?? "Profile (\(dir.prefix(8)))"
                     var profile = SafariProfile(id: dir, name: displayName, cookieURL: candidateURL)
                     profile.cacheSizeBytes = profile.calculateCacheSize()
@@ -117,29 +120,83 @@ public final class CookieStore {
         "~/Library/Containers/com.apple.Safari/Data/Library/WebKit/MediaKeys"
     ].map { $0.expandingTildeInPath }
     
-    /// Extract domain or hostname from web storage and IndexedDB file/folder names
+    /// Extract domain or hostname from web storage and IndexedDB file/folder names.
+    ///
+    /// Scans path components to isolate the origin identifier (e.g. `https_apple.com_0`),
+    /// stripping scheme prefixes, port/partition suffixes, and storage file extensions.
+    /// Returns `nil` for internal database metadata and container directories (`v1`, `___IndexedDB`, etc.).
+    ///
+    /// - Parameter storageItemName: The relative item path or directory name (e.g. `v1/https_apple.com_0/sqlite.db` or `https_github.com_0.localstorage`)
+    /// - Returns: The extracted domain host string (e.g. `apple.com`), or nil if non-origin/metadata.
     public static func extractDomain(from storageItemName: String) -> String? {
-        var name = storageItemName.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
-        guard !name.isEmpty else { return nil }
+        let cleanPath = storageItemName.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+        guard !cleanPath.isEmpty else { return nil }
         
-        // Strip common extension like .localstorage, .sqlite3, .db
-        if let lastDot = name.lastIndex(of: ".") {
-            name = String(name[..<lastDot])
-        }
-        // Strip scheme prefixes
-        if name.hasPrefix("https_") {
-            name = String(name.dropFirst(6))
-        } else if name.hasPrefix("http_") {
-            name = String(name.dropFirst(5))
-        }
-        // Strip trailing port/partition index like "_0", "_8080"
-        if let lastUnderscore = name.lastIndex(of: "_") {
-            let suffix = name[name.index(after: lastUnderscore)...]
-            if Int(suffix) != nil {
-                name = String(name[..<lastUnderscore])
+        let components = cleanPath.components(separatedBy: "/")
+        
+        // Scan each path component to locate the origin container
+        for component in components {
+            var comp = component.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
+            guard !comp.isEmpty else { continue }
+            
+            // Strip common non-origin web storage file extensions
+            let nonDomainExtensions: Set<String> = [
+                "localstorage", "localstorage-wal", "localstorage-shm",
+                "sqlite", "sqlite3", "sqlite-wal", "sqlite-shm",
+                "db", "db-wal", "db-shm", "wal", "shm", "binary", "plist", "lock", "blob"
+            ]
+            let ext = (comp as NSString).pathExtension.lowercased()
+            if nonDomainExtensions.contains(ext) {
+                comp = (comp as NSString).deletingPathExtension
+            }
+            if comp.hasSuffix(".localstorage-wal") { comp = String(comp.dropLast(16)) }
+            if comp.hasSuffix(".localstorage-shm") { comp = String(comp.dropLast(16)) }
+            if comp.hasSuffix(".sqlite-wal") { comp = String(comp.dropLast(11)) }
+            if comp.hasSuffix(".sqlite-shm") { comp = String(comp.dropLast(11)) }
+            if comp.hasSuffix(".db-wal") { comp = String(comp.dropLast(7)) }
+            if comp.hasSuffix(".db-shm") { comp = String(comp.dropLast(7)) }
+            
+            let hasSchemePrefix = comp.hasPrefix("https_") || comp.hasPrefix("http_")
+            
+            // Strip trailing port/partition index like "_0", "_8080", "_443"
+            if let lastUnderscore = comp.lastIndex(of: "_") {
+                let suffix = comp[comp.index(after: lastUnderscore)...]
+                if Int(suffix) != nil {
+                    comp = String(comp[..<lastUnderscore])
+                }
+            }
+            
+            // Strip scheme prefixes
+            if comp.hasPrefix("https_") {
+                comp = String(comp.dropFirst(6))
+            } else if comp.hasPrefix("http_") {
+                comp = String(comp.dropFirst(5))
+            }
+            
+            // Normalize leading dots
+            while comp.hasPrefix(".") {
+                comp = String(comp.dropFirst())
+            }
+            
+            guard !comp.isEmpty else { continue }
+            
+            // Ignore WebKit internal container / system folder names
+            let ignoredNames: Set<String> = [
+                "v1", "v0", "___indexeddb", ".ds_store", "databases", "storage",
+                "media", "cache", "indexeddb", "website_data", "generalstorage",
+                "localstorage", "webstorage"
+            ]
+            if ignoredNames.contains(comp.lowercased()) {
+                continue
+            }
+            
+            // Valid origin: must either have possessed a scheme prefix or contain a dot (domain name)
+            if hasSchemePrefix || comp.contains(".") {
+                return comp
             }
         }
-        return name.isEmpty ? nil : name
+        
+        return nil
     }
     
     /// Collect all profile and general cache directories to erase for given profiles
@@ -413,7 +470,8 @@ public final class CookieStore {
             }
         }
         
-        if encounteredError != nil && totalCookiesBefore == 0 {
+        // If FDA is completely unavailable and no cookies could be read across any profile, fail early
+        if permissionStatus != .granted && totalCookiesBefore == 0 && encounteredError != nil {
             let failedResult = CleaningResult(
                 cookiesBefore: 0, cookiesKept: 0, cookiesDeleted: 0,
                 bytesFreed: 0, cacheFilesRemoved: 0, scanFilesRemoved: 0,
@@ -446,8 +504,10 @@ public final class CookieStore {
             totalBytesFreed += storageFreed
             totalScanFilesRemoved += storageCount
             
-            if shouldClearProfileCaches {
-                profileCachesRemoved = cacheCount + storageCount
+            // Always aggregate total profile cache and storage files removed
+            profileCachesRemoved = cacheCount + storageCount
+            if profileCachesRemoved > 0 {
+                // Log summary of purged cache and web storage entries
                 AppLogger.shared.success("✨ Removed \(profileCachesRemoved) profile cache & storage files (\(ByteCountFormatter.string(fromByteCount: cacheFreed + storageFreed, countStyle: .file)) freed)")
             }
         } else {
@@ -783,15 +843,15 @@ public final class CookieStore {
                 while let item = enumerator?.nextObject() as? String {
                     // Normalize item path and extract embedded domain identifier
                     let cleanItem = item.trimmingCharacters(in: CharacterSet(charactersIn: "\0 \t\r\n"))
-                    let extractedDomain = Self.extractDomain(from: cleanItem)
                     
-                    // Check whether either the raw path or extracted domain matches the profile's whitelist
-                    let isRawWhitelisted = whitelist.isWhitelisted(test: cleanItem, profileId: profile.id)
-                    let isDomainWhitelisted = extractedDomain.map { whitelist.isWhitelisted(test: $0, profileId: profile.id) } ?? false
-                    
-                    // Queue non-whitelisted storage entries for deletion
-                    if !isRawWhitelisted && !isDomainWhitelisted {
-                        itemsToRemove.append(item)
+                    // Only remove storage entries that resolve to an identifiable domain/origin not present in the profile whitelist.
+                    // Internal WebKit container structures and metadata files (e.g. "v1", "___IndexedDB", "indexeddb.lock", "Databases.db")
+                    // return nil from extractDomain and are safely preserved so whitelisted sites keep their web storage.
+                    if let extractedDomain = Self.extractDomain(from: cleanItem) {
+                        let isWhitelisted = whitelist.isWhitelisted(test: extractedDomain, profileId: profile.id)
+                        if !isWhitelisted {
+                            itemsToRemove.append(item)
+                        }
                     }
                 }
                 
